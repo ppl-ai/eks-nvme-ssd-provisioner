@@ -71,9 +71,9 @@ case $SSD_NVME_DEVICE_COUNT in
   ;;
 "1")
   if [ "$FS_TYPE" == "xfs" ]; then
-    mkfs.xfs "${SSD_NVME_DEVICE_LIST[0]}"
+    /usr/sbin/mkfs.xfs "${SSD_NVME_DEVICE_LIST[0]}"
   else
-    mkfs.ext4 -m 0 -b "$FILESYSTEM_BLOCK_SIZE" "${SSD_NVME_DEVICE_LIST[0]}"
+    /usr/sbin/mkfs.ext4 -m 0 -b "$FILESYSTEM_BLOCK_SIZE" "${SSD_NVME_DEVICE_LIST[0]}"
   fi
   DEVICE="${SSD_NVME_DEVICE_LIST[0]}"
   ;;
@@ -87,9 +87,9 @@ case $SSD_NVME_DEVICE_COUNT in
   echo "Raid0 device $RAID_DEVICE has been created with disks ${SSD_NVME_DEVICE_LIST[*]}"
   
   if [ "$FS_TYPE" == "xfs" ]; then
-    mkfs.xfs "$RAID_DEVICE"
+    /usr/sbin/mkfs.xfs "$RAID_DEVICE"
   else
-    mkfs.ext4 -m 0 -b "$FILESYSTEM_BLOCK_SIZE" -E "stride=$STRIDE,stripe-width=$STRIPE_WIDTH" "$RAID_DEVICE"
+    /usr/sbin/mkfs.ext4 -m 0 -b "$FILESYSTEM_BLOCK_SIZE" -E "stride=$STRIDE,stripe-width=$STRIPE_WIDTH" "$RAID_DEVICE"
   fi
   DEVICE=$RAID_DEVICE
   ;;
