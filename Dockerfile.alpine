@@ -7,7 +7,8 @@ RUN \
     e2fsprogs \
     mdadm \
     nvme-cli \
-    util-linux
+    util-linux \
+    xfsprogs
 COPY eks-nvme-ssd-provisioner.sh /usr/local/bin/
 
 ENTRYPOINT ["eks-nvme-ssd-provisioner.sh"]
