@@ -4,6 +4,17 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
+# Parse command line arguments
+FS_TYPE="ext4"  # Default filesystem type
+if [[ $# -gt 0 ]]; then
+  if [[ "$1" == "ext4" || "$1" == "xfs" ]]; then
+    FS_TYPE="$1"
+  else
+    echo "Error: Filesystem type must be either 'ext4' or 'xfs'"
+    exit 1
+  fi
+fi
+
 mapfile -t SSD_NVME_DEVICE_LIST < <(nvme list | grep "Amazon EC2 NVMe Instance Storage" | cut -d " " -f 1 || true)
 SSD_NVME_DEVICE_COUNT=${#SSD_NVME_DEVICE_LIST[@]}
 RAID_DEVICE=${RAID_DEVICE:-/dev/md0}
@@ -38,7 +49,13 @@ then
   if mount | grep "$DEVICE" > /dev/null; then
     echo "device $DEVICE appears to be mounted already"
   else
-    mount -o defaults,noatime,discard,nobarrier --uuid "$UUID" "/pv-disks/$UUID"
+    # Determine mount options based on filesystem type
+    FS_TYPE_DETECTED=$(blkid -s TYPE -o value "$DEVICE")
+    if [ "$FS_TYPE_DETECTED" == "xfs" ]; then
+      mount -o rw,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota --uuid "$UUID" "/pv-disks/$UUID"
+    else
+      mount -o defaults,noatime,discard,nobarrier --uuid "$UUID" "/pv-disks/$UUID"
+    fi
   fi
   ln -s "/pv-disks/$UUID" /nvme/disk || true
   echo "Device $DEVICE has been mounted to /pv-disks/$UUID"
@@ -53,7 +70,11 @@ case $SSD_NVME_DEVICE_COUNT in
   exit 1
   ;;
 "1")
-  mkfs.ext4 -m 0 -b "$FILESYSTEM_BLOCK_SIZE" "${SSD_NVME_DEVICE_LIST[0]}"
+  if [ "$FS_TYPE" == "xfs" ]; then
+    mkfs.xfs "${SSD_NVME_DEVICE_LIST[0]}"
+  else
+    mkfs.ext4 -m 0 -b "$FILESYSTEM_BLOCK_SIZE" "${SSD_NVME_DEVICE_LIST[0]}"
+  fi
   DEVICE="${SSD_NVME_DEVICE_LIST[0]}"
   ;;
 *)
@@ -64,16 +85,28 @@ case $SSD_NVME_DEVICE_COUNT in
     sleep 1
   done
   echo "Raid0 device $RAID_DEVICE has been created with disks ${SSD_NVME_DEVICE_LIST[*]}"
-  mkfs.ext4 -m 0 -b "$FILESYSTEM_BLOCK_SIZE" -E "stride=$STRIDE,stripe-width=$STRIPE_WIDTH" "$RAID_DEVICE"
+  
+  if [ "$FS_TYPE" == "xfs" ]; then
+    mkfs.xfs "$RAID_DEVICE"
+  else
+    mkfs.ext4 -m 0 -b "$FILESYSTEM_BLOCK_SIZE" -E "stride=$STRIDE,stripe-width=$STRIPE_WIDTH" "$RAID_DEVICE"
+  fi
   DEVICE=$RAID_DEVICE
   ;;
 esac
 
 UUID=$(blkid -s UUID -o value "$DEVICE")
 mkdir -p "/pv-disks/$UUID"
-mount -o defaults,noatime,discard,nobarrier --uuid "$UUID" "/pv-disks/$UUID"
+
+# Mount with appropriate options based on filesystem type
+if [ "$FS_TYPE" == "xfs" ]; then
+  mount -o rw,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota --uuid "$UUID" "/pv-disks/$UUID"
+else
+  mount -o defaults,noatime,discard,nobarrier --uuid "$UUID" "/pv-disks/$UUID"
+fi
+
 ln -s "/pv-disks/$UUID" /nvme/disk
-echo "Device $DEVICE has been mounted to /pv-disks/$UUID"
+echo "Device $DEVICE has been mounted to /pv-disks/$UUID with filesystem type $FS_TYPE"
 echo "NVMe SSD provisioning is done and I will go to sleep now"
 
 while sleep 3600; do :; done
